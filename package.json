@@ -1,15 +1,16 @@
 {
   "name": "wolmar-auction-parser",
-  "version": "3.0.0",
-  "description": "Парсер аукционов Wolmar с веб-интерфейсом для просмотра аукционов и лотов",
-  "main": "server.js",
+  "version": "2.0.0",
+  "description": "Парсер аукционов Wolmar с возможностью возобновления работы с места остановки",
+  "main": "wolmar-parser4-fixed.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
-    "parser": "node wolmar-parser4-fixed.js main",
-    "parser:test": "node wolmar-parser4-fixed.js test",
-    "build": "echo 'No build step required for static files'",
-    "install-deps": "npm install"
+    "start": "node wolmar-parser4-fixed.js main",
+    "test": "node wolmar-parser4-fixed.js test",
+    "resume": "node wolmar-parser4-fixed.js resume",
+    "lot": "node wolmar-parser4-fixed.js lot",
+    "page": "node wolmar-parser4-fixed.js page",
+    "index": "node wolmar-parser4-fixed.js index",
+    "collect": "node wolmar-parser4-fixed.js collect"
   },
   "keywords": [
     "parser",
@@ -17,21 +18,13 @@
     "wolmar",
     "puppeteer",
     "postgresql",
-    "scraping",
-    "web-interface",
-    "express",
-    "api"
+    "scraping"
   ],
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "pg": "^8.11.0",
-    "puppeteer-core": "^24.19.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
+    "puppeteer-core": "^24.19.0",
+    "pg": "^8.11.0"
   },
   "engines": {
     "node": ">=16.0.0"
