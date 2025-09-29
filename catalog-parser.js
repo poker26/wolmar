@@ -316,11 +316,90 @@ class CatalogParser {
                 result.condition = conditionMatch[1] + ' кондиции';
             }
 
+            // Извлекаем вес и пробу
+            this.extractWeightAndFineness(description, result);
+
         } catch (error) {
             console.error('Ошибка парсинга описания:', error);
         }
 
         return result;
+    }
+
+    // Извлечение веса и пробы из описания
+    extractWeightAndFineness(description, result) {
+        // Извлекаем вес в граммах
+        const weightPatterns = [
+            /масса[-\s]*(\d+(?:[.,]\d+)?)\s*гр?\.?/i,           // "масса-5 гр", "масса 3,5 гр"
+            /(\d+(?:[.,]\d+)?)\s*гр?\.?\s*[А-Яа-я]/i,           // "2,82 гр.", "5 гр"
+            /(\d+(?:[.,]\d+)?)\s*грамм/i,                       // "10 грамм"
+            /вес[-\s]*(\d+(?:[.,]\d+)?)\s*гр?\.?/i,             // "вес 5 гр"
+            // Новые паттерны для веса после металла без единиц измерения
+            /\b(Au|Ag|Pt|Pd|Cu|Ni|Zn|Al|Fe|Br|Bm|Lt|Met)\s+(\d+(?:[.,]\d+)?)(?:\s|$)/i,  // "Au 15,55", "Ag 31,1"
+            /\b(Au|Ag|Pt|Pd|Cu|Ni|Zn|Al|Fe|Br|Bm|Lt|Met)\s+(\d+(?:[.,]\d+)?)\s*гр?\.?/i  // "Au 15,55 гр", "Ag 31,1 гр"
+        ];
+        
+        for (const pattern of weightPatterns) {
+            const match = description.match(pattern);
+            if (match) {
+                // Для новых паттернов с металлом: match[1] = металл, match[2] = вес
+                // Для старых паттернов: match[1] = вес
+                if (match[2]) {
+                    // Новый паттерн с металлом
+                    result.coin_weight = parseFloat(match[2].replace(',', '.'));
+                } else {
+                    // Старый паттерн
+                    result.coin_weight = parseFloat(match[1].replace(',', '.'));
+                }
+                break;
+            }
+        }
+        
+        // Извлекаем вес в унциях
+        const ozPatterns = [
+            /(\d+\/\d+)\s*oz/i,                                 // "1/5 oz", "1/4 oz"
+            /(\d+(?:[.,]\d+)?)\s*oz/i,                          // "1 oz", "1.5 oz"
+            /(\d+(?:[.,]\d+)?)\s*ounce/i,                       // "1 ounce"
+            /(\d+(?:[.,]\d+)?)\s*troy\s*oz/i                    // "1 troy oz"
+        ];
+        
+        for (const pattern of ozPatterns) {
+            const match = description.match(pattern);
+            if (match) {
+                let weight = match[1];
+                // Обрабатываем дроби типа "1/5"
+                if (weight.includes('/')) {
+                    const [numerator, denominator] = weight.split('/');
+                    result.weight_oz = parseFloat(numerator) / parseFloat(denominator);
+                } else {
+                    result.weight_oz = parseFloat(weight.replace(',', '.'));
+                }
+                break;
+            }
+        }
+        
+        // Извлекаем пробу
+        const finenessPatterns = [
+            /(\d{3,4})\s*проба/i,                              // "999 проба", "925 проба"
+            /проба\s*(\d{3,4})/i,                              // "проба 999"
+            /(\d{3,4})\s*fineness/i,                           // "999 fineness"
+            /fineness\s*(\d{3,4})/i,                           // "fineness 999"
+            /(\d{3,4})\s*карат/i,                              // "999 карат"
+            /карат\s*(\d{3,4})/i                               // "карат 999"
+        ];
+        
+        for (const pattern of finenessPatterns) {
+            const match = description.match(pattern);
+            if (match) {
+                result.fineness = parseInt(match[1]);
+                break;
+            }
+        }
+        
+        // Вычисляем содержание чистого металла
+        if (result.coin_weight && result.fineness) {
+            result.pure_metal_weight = (result.coin_weight * result.fineness) / 1000; // 999 проба = 99.9%
+        }
     }
 
     // Извлечение страны из названия монеты
@@ -543,10 +622,11 @@ class CatalogParser {
                     avers_image_path, revers_image_path,
                     avers_image_url, revers_image_url,
                     avers_image_data, revers_image_data,
+                    coin_weight, fineness, pure_metal_weight, weight_oz,
                     original_description
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                    $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26
+                    $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30
                 )
             `;
             
@@ -576,6 +656,10 @@ class CatalogParser {
                 lot.revers_image_url,
                 aversImageData,
                 reversImageData,
+                parsedData.coin_weight,
+                parsedData.fineness,
+                parsedData.pure_metal_weight,
+                parsedData.weight_oz,
                 lot.coin_description
             ]);
             

@@ -73,7 +73,10 @@ app.get('/api/catalog/coins', async (req, res) => {
             denomination, 
             metal, 
             rarity, 
+            condition,
             year, 
+            yearFrom,
+            yearTo,
             mint,
             country,
             minMintage,
@@ -90,6 +93,7 @@ app.get('/api/catalog/coins', async (req, res) => {
                 avers_image_url, revers_image_url,
                 CASE WHEN avers_image_data IS NOT NULL THEN true ELSE false END as has_avers_image,
                 CASE WHEN revers_image_data IS NOT NULL THEN true ELSE false END as has_revers_image,
+                coin_weight, fineness, pure_metal_weight, weight_oz,
                 auction_number, lot_number,
                 original_description
             FROM coin_catalog 
@@ -124,9 +128,27 @@ app.get('/api/catalog/coins', async (req, res) => {
             paramIndex++;
         }
         
+        if (condition) {
+            query += ` AND condition ILIKE $${paramIndex}`;
+            queryParams.push(`%${condition}%`);
+            paramIndex++;
+        }
+        
         if (year) {
             query += ` AND year = $${paramIndex}`;
             queryParams.push(parseInt(year));
+            paramIndex++;
+        }
+        
+        if (yearFrom) {
+            query += ` AND year >= $${paramIndex}`;
+            queryParams.push(parseInt(yearFrom));
+            paramIndex++;
+        }
+        
+        if (yearTo) {
+            query += ` AND year <= $${paramIndex}`;
+            queryParams.push(parseInt(yearTo));
             paramIndex++;
         }
         
@@ -271,6 +293,13 @@ app.get('/api/catalog/filters', async (req, res) => {
                         ELSE 4 
                     END
             `,
+            conditions: `
+                SELECT condition, COUNT(*) as count 
+                FROM coin_catalog 
+                WHERE condition IS NOT NULL AND condition != ''
+                GROUP BY condition 
+                ORDER BY count DESC
+            `,
             years: `
                 SELECT year, COUNT(*) as count 
                 FROM coin_catalog 
@@ -283,6 +312,13 @@ app.get('/api/catalog/filters', async (req, res) => {
                 FROM coin_catalog 
                 WHERE mint IS NOT NULL AND mint != ''
                 GROUP BY mint 
+                ORDER BY count DESC
+            `,
+            countries: `
+                SELECT country, COUNT(*) as count 
+                FROM coin_catalog 
+                WHERE country IS NOT NULL AND country != ''
+                GROUP BY country 
                 ORDER BY count DESC
             `
         };

@@ -1,109 +1,114 @@
 #!/bin/bash
 
-# Скрипт для настройки веб-интерфейса каталога на сервере
-# Запускается на сервере для настройки каталога монет
+echo "🔧 Настройка каталога монет на сервере..."
 
-echo "🌐 Настройка веб-интерфейса каталога монет на сервере..."
-echo "====================================================="
-
-# Проверяем, что мы на сервере
-if [ ! -f "/var/www/wolmar-parser/server.js" ]; then
-    echo "❌ Ошибка: Скрипт должен запускаться на сервере в /var/www/"
+# Проверяем, что мы в правильной директории
+if [ ! -f "catalog-parser.js" ]; then
+    echo "❌ Файл catalog-parser.js не найден. Запустите скрипт из корневой директории проекта."
     exit 1
 fi
 
-echo "📁 Создаем директорию для каталога..."
-mkdir -p /var/www/catalog-interface
-cd /var/www/catalog-interface
+# Останавливаем существующие процессы
+echo "🛑 Остановка существующих процессов..."
+pm2 stop catalog-parser 2>/dev/null || true
+pm2 stop catalog-server 2>/dev/null || true
 
-echo ""
-echo "🔄 Переключаемся на ветку web-interface в основном проекте..."
-cd /var/www/wolmar-parser
-git checkout web-interface
-
-if [ $? -eq 0 ]; then
-    echo "✅ Переключились на ветку web-interface"
-else
-    echo "❌ Ошибка переключения на ветку web-interface"
-    exit 1
-fi
-
-echo ""
-echo "📦 Копируем файлы веб-интерфейса..."
-cp -r public/ /var/www/catalog-interface/
-cp server.js /var/www/catalog-interface/
-cp package.json /var/www/catalog-interface/
-cp package-lock.json /var/www/catalog-interface/
-cp config.example.js /var/www/catalog-interface/
-cp README.md /var/www/catalog-interface/
-
-echo "✅ Файлы скопированы"
-
-echo ""
-echo "📦 Устанавливаем зависимости..."
-cd /var/www/catalog-interface
+# Устанавливаем зависимости
+echo "📦 Установка зависимостей..."
 npm install
 
-if [ $? -eq 0 ]; then
-    echo "✅ Зависимости установлены"
-else
-    echo "❌ Ошибка установки зависимостей"
+# Проверяем конфигурацию БД
+echo "🔍 Проверка конфигурации БД..."
+if [ ! -f "config.js" ]; then
+    echo "❌ Файл config.js не найден!"
     exit 1
 fi
 
-echo ""
-echo "⚙️ Настраиваем конфигурацию..."
-if [ -f "config.example.js" ]; then
-    cp config.example.js config.js
-    echo "✅ Конфигурация создана из примера"
-    echo "💡 Отредактируйте config.js с настройками БД"
-else
-    echo "⚠️ config.example.js не найден, создаем базовую конфигурацию"
-    cat > config.js << EOF
+# Проверяем подключение к БД
+echo "🔗 Проверка подключения к БД..."
+node -e "
+const { Pool } = require('pg');
+const config = require('./config');
+const pool = new Pool(config.dbConfig);
+pool.query('SELECT 1')
+  .then(() => {
+    console.log('✅ Подключение к БД успешно');
+    process.exit(0);
+  })
+  .catch(err => {
+    console.error('❌ Ошибка подключения к БД:', err.message);
+    process.exit(1);
+  });
+"
+
+if [ $? -ne 0 ]; then
+    echo "❌ Не удалось подключиться к БД. Проверьте config.js"
+    exit 1
+fi
+
+# Создаем PM2 конфигурацию для каталога
+echo "⚙️ Создание PM2 конфигурации для каталога..."
+cat > ecosystem-catalog.config.js << 'EOF'
 module.exports = {
-    dbConfig: {
-        user: 'postgres.xkwgspqwebfeteoblayu',
-        host: 'aws-0-eu-north-1.pooler.supabase.com',
-        database: 'postgres',
-        password: 'Gopapopa326+',
-        port: 6543,
-        ssl: {
-            rejectUnauthorized: false
-        }
+  apps: [
+    {
+      name: 'catalog-parser',
+      script: 'catalog-parser.js',
+      cwd: '/var/www/wolmar-parser',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '1G',
+      env: {
+        NODE_ENV: 'production'
+      },
+      log_file: '/var/log/pm2/catalog-parser.log',
+      out_file: '/var/log/pm2/catalog-parser-out.log',
+      error_file: '/var/log/pm2/catalog-parser-error.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
+    },
+    {
+      name: 'catalog-server',
+      script: 'catalog-server.js',
+      cwd: '/var/www/wolmar-parser',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '512M',
+      env: {
+        NODE_ENV: 'production'
+      },
+      log_file: '/var/log/pm2/catalog-server.log',
+      out_file: '/var/log/pm2/catalog-server-out.log',
+      error_file: '/var/log/pm2/catalog-server-error.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
     }
+  ]
 };
 EOF
-    echo "✅ Базовая конфигурация создана"
-fi
 
+# Создаем директории для логов
+echo "📁 Создание директорий для логов..."
+mkdir -p /var/log/pm2
+
+# Запускаем каталог через PM2
+echo "🚀 Запуск каталога через PM2..."
+pm2 start ecosystem-catalog.config.js
+
+# Сохраняем конфигурацию PM2
+pm2 save
+
+echo "✅ Каталог настроен и запущен!"
 echo ""
-echo "🚀 Настраиваем PM2 для каталога..."
-pm2 start server.js --name "catalog-interface" --cwd /var/www/catalog-interface
-
-if [ $? -eq 0 ]; then
-    echo "✅ Каталог запущен через PM2"
-else
-    echo "❌ Ошибка запуска через PM2"
-    echo "💡 Попробуйте запустить вручную: node server.js"
-fi
-
-echo ""
-echo "📊 Проверяем статус PM2..."
+echo "📊 Статус процессов:"
 pm2 status
 
 echo ""
-echo "🌐 Проверяем доступность каталога..."
-sleep 3
-curl -s http://localhost:3000/api/auctions > /dev/null
-
-if [ $? -eq 0 ]; then
-    echo "✅ Каталог доступен на http://localhost:3000"
-else
-    echo "⚠️ Каталог может быть недоступен, проверьте логи: pm2 logs catalog-interface"
-fi
-
+echo "🌐 Каталог доступен на:"
+echo "   http://server:3000"
 echo ""
-echo "✅ Настройка каталога завершена!"
-echo "🌐 Каталог доступен по адресу: http://46.173.19.68:3000"
-echo "📊 Мониторинг: pm2 logs catalog-interface"
-echo "🔄 Перезапуск: pm2 restart catalog-interface"
+echo "📋 Полезные команды:"
+echo "   pm2 logs catalog-parser    # Логи парсера"
+echo "   pm2 logs catalog-server    # Логи веб-сервера"
+echo "   pm2 restart catalog-parser  # Перезапуск парсера"
+echo "   pm2 restart catalog-server  # Перезапуск веб-сервера"

@@ -489,9 +489,7 @@ function createLotCard(lot) {
                 <div class="flex justify-between items-center">
                     <div>
                         <p class="text-sm text-gray-500">Победитель</p>
-                        <div id="winner-${lot.id}" class="font-medium text-gray-800">
-                            <!-- Победитель будет загружен асинхронно с рейтингом -->
-                        </div>
+                        <div id="winner-${lot.id}" class="font-medium text-gray-800"></div>
                     </div>
                     <div class="text-right">
                         <p class="text-sm text-gray-500">Цена</p>
@@ -505,7 +503,7 @@ function createLotCard(lot) {
         </div>
     `;
     
-    // Add clickable winner link with rating
+    // Add clickable winner link
     const winnerContainer = card.querySelector(`#winner-${lot.id}`);
     if (lot.winner_login) {
         const winnerLink = createWinnerLink(lot.winner_login);
@@ -823,15 +821,13 @@ async function loadGlobalFilters() {
     }
 }
 
-async function handleAuctionChange() {
+function handleAuctionChange() {
     const selectedAuction = elements.auctionSelect.value;
     if (selectedAuction) {
         currentAuction = selectedAuction;
         currentPage = 1;
-        
-        // Load filters first, then lots
-        await loadFilters(selectedAuction);
         loadLots(selectedAuction, 1);
+        loadFilters(selectedAuction);
         
         // Enable export button when auction is selected
         elements.exportBtn.disabled = false;
@@ -885,11 +881,8 @@ async function loadFilters(auctionNumber) {
         if (filters.metals && filters.metals.length > 0) {
             filters.metals.forEach(metal => {
                 const option = document.createElement('option');
-                // Check if metal is an object with 'metal' property or just a string
-                const metalValue = typeof metal === 'object' ? metal.metal : metal;
-                const metalText = typeof metal === 'object' ? `${metal.metal} (${metal.count})` : metal;
-                option.value = metalValue;
-                option.textContent = metalText;
+                option.value = metal;
+                option.textContent = metal;
                 elements.metalFilter.appendChild(option);
             });
         }
@@ -1043,43 +1036,13 @@ async function searchWinner() {
     }
 }
 
-async function displayWinnerData(data) {
+function displayWinnerData(data) {
     const { stats, auctions, lots } = data;
     
     // Display statistics
     elements.winnerLogin.textContent = stats.winner_login;
     elements.winnerTotalLots.textContent = stats.total_lots;
     elements.winnerTotalAmount.textContent = formatPrice(stats.total_amount);
-    
-    // Загружаем и отображаем рейтинг победителя
-    try {
-        const rating = await getCachedRating(stats.winner_login);
-        if (rating) {
-            // Создаем контейнер для никнейма и рейтинга
-            const loginContainer = document.createElement('div');
-            loginContainer.className = 'flex items-center space-x-3';
-            
-            // Никнейм
-            const loginSpan = document.createElement('span');
-            loginSpan.textContent = stats.winner_login;
-            loginSpan.className = 'text-2xl font-bold text-gray-800';
-            loginContainer.appendChild(loginSpan);
-            
-            // Рейтинг
-            const ratingBadge = document.createElement('span');
-            ratingBadge.className = 'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium';
-            ratingBadge.style.backgroundColor = rating.color;
-            ratingBadge.style.color = 'white';
-            ratingBadge.innerHTML = `${rating.icon} ${rating.rating} (${rating.category})`;
-            loginContainer.appendChild(ratingBadge);
-            
-            // Заменяем содержимое
-            elements.winnerLogin.innerHTML = '';
-            elements.winnerLogin.appendChild(loginContainer);
-        }
-    } catch (error) {
-        console.error('Ошибка загрузки рейтинга:', error);
-    }
     
     elements.winnerStats.classList.remove('hidden');
     
@@ -1207,41 +1170,6 @@ async function loadMetalInfo(lotId) {
     }
 }
 
-// Функция для загрузки рейтинга победителя
-async function loadWinnerRating(winnerLogin) {
-    try {
-        const response = await fetch(`/api/ratings/${winnerLogin}`);
-        if (response.ok) {
-            return await response.json();
-        }
-        return null;
-    } catch (error) {
-        console.error('Ошибка загрузки рейтинга победителя:', error);
-        return null;
-    }
-}
-
-// Кэш рейтингов для быстрого доступа
-const ratingsCache = new Map();
-
-// Функция для получения рейтинга с кэшированием
-async function getCachedRating(winnerLogin) {
-    const cached = ratingsCache.get(winnerLogin);
-    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-        return cached.data;
-    }
-    
-    const rating = await loadWinnerRating(winnerLogin);
-    if (rating) {
-        ratingsCache.set(winnerLogin, {
-            data: rating,
-            timestamp: Date.now()
-        });
-    }
-    
-    return rating;
-}
-
 // Функция для загрузки информации о металле на текущую дату
 async function loadCurrentMetalInfo(lotId) {
     try {
@@ -1344,9 +1272,6 @@ function createCurrentMetalInfoHTML(metalInfo) {
 function createWinnerLink(winnerLogin) {
     if (!winnerLogin) return 'Не указан';
     
-    const container = document.createElement('div');
-    container.className = 'flex items-center space-x-2';
-    
     const link = document.createElement('a');
     link.href = '#';
     link.className = 'text-blue-600 hover:text-blue-800 hover:underline font-medium';
@@ -1357,21 +1282,7 @@ function createWinnerLink(winnerLogin) {
         showWinnerStats(winnerLogin);
     });
     
-    container.appendChild(link);
-    
-    // Загружаем рейтинг асинхронно
-    getCachedRating(winnerLogin).then(rating => {
-        if (rating) {
-            const ratingBadge = document.createElement('span');
-            ratingBadge.className = 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium';
-            ratingBadge.style.backgroundColor = rating.color;
-            ratingBadge.style.color = 'white';
-            ratingBadge.innerHTML = `${rating.icon} ${rating.rating}`;
-            container.appendChild(ratingBadge);
-        }
-    });
-    
-    return container;
+    return link;
 }
 
 // Show winner stats by switching to winners tab and searching
@@ -1385,6 +1296,33 @@ function showWinnerStats(login) {
 }
 
 // Global Search Functions
+async function loadGlobalFilters() {
+    try {
+        const response = await cachedFetch('/api/filters');
+        const { metals, conditions } = response;
+        
+        // Populate metal filter
+        elements.globalMetalFilter.innerHTML = '<option value="">Все металлы</option>';
+        metals.forEach(metal => {
+            const option = document.createElement('option');
+            option.value = metal.metal;
+            option.textContent = `${metal.metal} (${metal.count})`;
+            elements.globalMetalFilter.appendChild(option);
+        });
+        
+        // Populate condition filter
+        elements.globalConditionFilter.innerHTML = '<option value="">Все состояния</option>';
+        conditions.forEach(condition => {
+            const option = document.createElement('option');
+            option.value = condition.condition;
+            option.textContent = `${condition.condition} (${condition.count})`;
+            elements.globalConditionFilter.appendChild(option);
+        });
+        
+    } catch (error) {
+        console.error('Ошибка загрузки фильтров:', error);
+    }
+}
 
 async function applyGlobalFilters() {
     try {
@@ -1673,7 +1611,8 @@ function displayCurrentAuctionResults(data) {
         return;
     }
     
-    if (!pagination) {console.error('displayCurrentAuctionResults: pagination is null or undefined');
+    if (!pagination) {
+        console.error('displayCurrentAuctionResults: pagination is null or undefined');
         return;
     }
     
@@ -2056,9 +1995,7 @@ function displayPriceHistory(lotId, data) {
                     </div>
                     <div class="text-right">
                         <p class="font-bold text-green-600">${formatPrice(lot.winning_bid)}</p>
-                        <div id="history-winner-${lot.id}" class="text-xs text-gray-500">
-                            <!-- Победитель с рейтингом будет загружен асинхронно -->
-                        </div>
+                        <p class="text-xs text-gray-500">${lot.winner_login}</p>
                     </div>
                 </div>
                 <div id="history-metal-info-${lot.id}" class="mt-2">
@@ -2071,7 +2008,7 @@ function displayPriceHistory(lotId, data) {
     historyHTML += '</div>';
     priceHistoryContent.innerHTML = historyHTML;
     
-    // Загружаем информацию о металле и рейтинги для каждого лота в истории асинхронно
+    // Загружаем информацию о металле для каждого лота в истории асинхронно
     const metalPromises = similarLots.slice(0, 5).map(lot => {
         if (lot.winning_bid && lot.metal && lot.weight) {
             return loadMetalInfo(lot.id).then(metalInfo => {
@@ -2083,23 +2020,6 @@ function displayPriceHistory(lotId, data) {
             });
         }
         return Promise.resolve({ lotId: null, metalInfo: null });
-    });
-    
-    // Загружаем рейтинги победителей для истории
-    similarLots.slice(0, 5).forEach(lot => {
-        if (lot.winner_login) {
-            getCachedRating(lot.winner_login).then(rating => {
-                const winnerContainer = document.getElementById(`history-winner-${lot.id}`);
-                if (winnerContainer) {
-                    if (rating) {
-                        const winnerLink = createWinnerLink(lot.winner_login);
-                        winnerContainer.appendChild(winnerLink);
-                    } else {
-                        winnerContainer.textContent = lot.winner_login;
-                    }
-                }
-            });
-        }
     });
     
     // Wait for all metal data to load, then create chart with complete data
